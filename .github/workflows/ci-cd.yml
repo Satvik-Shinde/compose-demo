@@ -1,0 +1,76 @@
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [feature]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t python-flask-app ./app
+
+      - name: Save Docker image
+        run: docker save -o /tmp/python-flask-app.tar python-flask-app
+
+      - name: Upload Docker image
+        uses: actions/upload-artifact@v4
+        with:
+          name: flask-image
+          path: /tmp/python-flask-app.tar
+          retention-days: 1
+
+  test:
+    name: Test Application
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Download Docker image
+        uses: actions/download-artifact@v4
+        with:
+          name: flask-image
+          path: /tmp
+
+      - name: Load Docker image
+        run: docker load -i /tmp/python-flask-app.tar
+
+      - name: Test Flask application
+        run: |
+          docker run -d --name flask-test \
+            -p 3000:3000 python-flask-app
+
+          trap 'docker logs flask-test || true; docker rm -f flask-test || true' EXIT
+
+          for i in $(seq 1 15); do
+            if curl --fail http://localhost:3000/; then
+              echo "Flask application test passed"
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "Flask application test failed"
+          exit 1
+
+  deploy:
+    name: Deploy Application
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feature'
+
+    steps:
+      - name: Deployment placeholder
+        run: echo "Build and tests passed. Ready for deployment."
